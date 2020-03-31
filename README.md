@@ -13,6 +13,3 @@
 ### Policy iteration
 
 ### Value iteration
-
-
-junk junk
