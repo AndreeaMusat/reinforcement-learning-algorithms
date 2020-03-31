@@ -1,3 +1,9 @@
+"""Stochastic grid world implementation with custom visualization methods
+along with usage examples.
+
+Andreea Musat, March 2020
+"""
+
 from colors import *
 import math
 import numpy as np
@@ -5,8 +11,21 @@ import pygame
 
 
 class GridWorld(object):
-  def __init__(self, grid_size, num_obstacles, stochastic_cell_ratio, render):
-    self.grid_size = grid_size
+  def __init__(self, grid_size, num_obstacles, stochastic_cell_ratio):
+    """Initialize a custom grid world environment.
+
+    Parameters:
+    -----------
+    grid_size : integer
+      Will be adjusted to be in the range 5..50. 
+    num_obstacles : integer
+      Number of cells that have 'more negative' reward.
+    stochastic_cell_ratio : float
+      Between 0 and 1, the percent of cells with nondeterministic behaviour.
+    """
+    self.grid_size = min(50, max(5, grid_size))
+    num_obstacles = min(num_obstacles, grid_size * grid_size - 1)
+    stochastic_cell_ratio = min(1.0, max(0.0, stochastic_cell_ratio))
 
     # Generate a 'complex enough' environment. Make sure the current
     # and target positions are at least min_dist cells apart.
@@ -61,15 +80,20 @@ class GridWorld(object):
           row_sum = np.sum(self.transition_matrix[i, j, :, :], axis=1)
           self.transition_matrix[i, j, :, :] = (self.transition_matrix[i, j, :, :].T / row_sum).T
 
-    if render:
-      self.win_size = self.grid_size * 25
-      self.delta = self.win_size // self.grid_size
-      self.win = pygame.display.set_mode((self.win_size, self.win_size))
-      self.val_to_color = {}
+    self.render_world = True
+    self.render_policy = False
+    self.clock = pygame.time.Clock()
+    self.win_size = self.grid_size * 25
+    self.delta = self.win_size // self.grid_size
+    self.win = pygame.display.set_mode((self.win_size, self.win_size))
+    self.val_to_color = {}
 
-      self.num_colors = 2000
-      self.min_val, self.max_val = -1.0, 1.0
-      self.colors = linear_gradient("#FF0000", "#00FF00", self.num_colors)
+    self.num_colors = 2000
+    self.min_val, self.max_val = -1.0, 1.0
+    self.colors = linear_gradient("#FF0000", "#00FF00", self.num_colors)
+
+    self.delay_ms = 50
+    self.pause = False
 
   def restart_episode(self, ):
     self.pos = np.random.choice(self.grid_size, 2)
@@ -93,7 +117,10 @@ class GridWorld(object):
     return new_pos
 
   def step(self, action):
-    """ 
+    """The agent tries to make a step according to 'action'. 
+
+    The result is not necessarily the intended one, as the environment is stochastic
+    and it might throw the agent somewhere else than where it intended to go. 
 
     Parameters:
     -----------
@@ -162,7 +189,7 @@ class GridWorld(object):
   def draw_target(self):
     self.draw_square(self.target[0], self.target[1], blue, 16)
 
-  def draw_policy(self, policy):
+  def draw_policy(self, policy, color=black):
     diff = 5
     for i in range(self.grid_size):
       for j in range(self.grid_size):
@@ -184,17 +211,7 @@ class GridWorld(object):
           end = (i * self.delta + diff, (j + 0.5) * self.delta)
         
         if start is not None and end is not None:
-          self.draw_arrow(black, black, start, end, 5)
-
-  def draw_black_screen(self):
-    self.win.fill(black)
-
-  def draw(self):
-    self.win.fill((0, 0, 0))
-    self.draw_grid()
-    self.draw_obstacles()
-    self.draw_current(dark_blue)
-    self.draw_target()
+          self.draw_arrow(color, color, start, end, 5)
 
   def draw_state_values(self, v, render_policy=False):
     min_val, max_val = np.min(v), np.max(v)
@@ -206,19 +223,6 @@ class GridWorld(object):
         if bucket_size:
           idx = min(self.num_colors - 1, int((v[i][j] - min_val) / bucket_size))
         self.draw_square(i, j, self.colors[idx])
-
-  def draw_with_state_values(self, v, policy=None):
-    """
-    v has shape (grid_size, grid_size)
-    """
-    self.draw_state_values(v)
-    self.draw_grid()
-    self.draw_obstacles()
-    self.draw_current(dark_blue)
-    self.draw_target()
-
-    if policy is not None:
-      self.draw_policy(policy)
 
   def draw_state_action_values(self, q):
     min_val, max_val = np.min(q), np.max(q)
@@ -252,39 +256,124 @@ class GridWorld(object):
         pygame.draw.line(self.win, white, (left_x - 1, top_y + 1), (right_x + 1, bottom_y - 1))
         pygame.draw.line(self.win, white, (left_x - 1, bottom_y - 1), (right_x + 1, top_y + 1))
 
-  def draw_with_state_action_values(self, q, render_policy=False):
-    """ 
+  def draw_black_screen(self):
+    self.win.fill(black)
+
+  def draw(self, policy=None):
+    if not self.render_world:
+      return
+
+    self.draw_black_screen()
+    self.draw_grid()
+    self.draw_obstacles()
+    self.draw_current(dark_blue)
+    self.draw_target()
+
+    if policy is not None:
+      self.draw_policy(policy, white)
+
+  def draw_with_state_values(self, v, policy=None):
+    """Draw the game, along with color-encoded values for each state.
+
+    Parameters:
+    v : np.array
+      The state value float array of shape (grid_size, grid_size)
+    policy : np.array
+      Policy used by the agent. Array of integers 0 (N), 1 (E), 2 (S) or 3 (W) of 
+      shape (grid_size, grid_size).
+    """
+    if not self.render_world:
+      return
+
+    self.draw_state_values(v)
+    self.draw_grid()
+    self.draw_obstacles()
+    self.draw_current(dark_blue)
+    self.draw_target()
+
+    if policy is not None:
+      self.draw_policy(policy)
+
+  def draw_with_state_action_values(self, q, policy=None):
+    """Draw the game, along with color-encoded values for each state-action pair. 
     
     Parameters:
     -----------
     q : np.array 
       Array of float (state, action) values of shape (grid_size, grid_size, 4) (N-E-S-W)
+    render_policy : boolean
+      True if policy should be also rendered.
     """
-    
+    if not self.render_world:
+      return
+
     self.draw_state_action_values(q)
     self.draw_grid()
     self.draw_obstacles()
     self.draw_current(dark_blue)
     self.draw_target()
 
+    if policy is not None:
+      self.draw_policy(policy)
+
+  def get_user_input(self):
+    if not self.render_world:
+      return
+
+    for event in pygame.event.get():
+      if event.type == pygame.QUIT:
+        pygame.quit()
+        quit()
+      if event.type == pygame.KEYDOWN:
+        if event.key == pygame.K_p:
+          self.pause = not self.pause
+        if event.key == pygame.K_a:
+          self.render_policy = not self.render_policy
+        if event.key == pygame.K_s:
+          self.delay_ms *= 2
+        if event.key == pygame.K_f:
+          self.delay_ms //= 2
+
+  def tick_tock(self):
+    pygame.time.delay(self.delay_ms)
+    pygame.display.update()
+    self.clock.tick(30)
+
 
 def main():
-  grid_size = 8
-  grid_world = GridWorld(grid_size, num_obstacles=3, stochastic_cell_ratio=0.1, render=True)
-  v = np.random.random((grid_size, grid_size)) 
-  q = np.random.random((grid_size, grid_size, 4))
+  grid_size = 10
+  grid_world = GridWorld(grid_size, num_obstacles=3, stochastic_cell_ratio=0.1)
+  
+  # 'simple' or 'state-values' or 'state-action-values'
+  usage_type = 'simple'
+
+  if usage_type == 'state-values':
+    v = np.random.random((grid_size, grid_size)) 
+  elif usage_type == 'state-action-values':
+    q = np.random.random((grid_size, grid_size, 4))
+  
   policy = np.random.choice(4, (grid_size, grid_size))
 
-  clock = pygame.time.Clock()
+  episode_ended = False
   while True:
-    # grid_world.draw()
-    grid_world.draw_with_state_values(v, policy=policy)
-    # grid_world.draw_with_state_action_values(q)
-    grid_world.step(np.random.choice(4))
+    grid_world.get_user_input()
 
-    pygame.time.delay(50)
-    pygame.display.update()
-    clock.tick(20)
+    if usage_type == 'simple':
+      grid_world.draw(policy=policy if grid_world.render_policy else None)
+    elif usage_type == 'state-values':
+      grid_world.draw_with_state_values(v, policy=policy if grid_world.render_policy else None)
+    elif usage_type == 'state-action-values':
+      grid_world.draw_with_state_action_values(q, policy=policy if grid_world.render_policy else None)
+
+    if not grid_world.pause:   
+      if episode_ended:
+        grid_world.restart_episode()
+        grid_world.draw_black_screen()
+        episode_ended = False
+      else:
+        episode_ended, _, _ = grid_world.step(np.random.choice(4))
+
+    grid_world.tick_tock()
 
 
 if __name__ == '__main__':
