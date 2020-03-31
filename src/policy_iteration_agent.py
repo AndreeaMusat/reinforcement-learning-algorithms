@@ -3,12 +3,12 @@
 Andreea Musat, March 2020
 """
 
-from env import GridWorld
+from agent_interface import Agent
 import numpy as np
 import pygame
 
 
-class PolicyIterationAgent(object):
+class PolicyIterationAgent(Agent):
   def __init__(self, grid_size, rewards, transition_matrix, step_func, discount):
     """Initialize a Policy Iteration agent.
 
@@ -100,37 +100,8 @@ class PolicyIterationAgent(object):
       is_stable_policy = self.policy_improvement_step()
       self.job = 'nothing' if is_stable_policy else 'eval-policy'
 
+  def ready_to_play(self):
+  	return self.job == 'nothing'
+
   def get_action(self, state):
     return self.pi[state[0], state[1]]
-
-
-def main():
-  grid_size = 10
-  grid_world = GridWorld(grid_size, num_obstacles=5, stochastic_cell_ratio=0.1)
-  agent = PolicyIterationAgent(grid_size=grid_size, 
-                               rewards=grid_world.rewards, 
-                               transition_matrix=grid_world.transition_matrix, 
-                               step_func=GridWorld.deterministic_step,
-                               discount=0.9)
-
-  episode_ended = False
-  while True:
-    grid_world.get_user_input()
-    grid_world.draw_with_state_values(agent.v, policy=agent.pi if grid_world.render_policy else None)
-    
-    if not grid_world.pause:
-      if episode_ended:
-        grid_world.restart_episode()
-        grid_world.draw_black_screen()
-        episode_ended = False
-      else:
-        agent.do_job()
-        if agent.job == 'nothing':
-           action = agent.get_action(grid_world.pos)
-           episode_ended, _, _ = grid_world.step(action)
-
-    grid_world.tick_tock()
-
-
-if __name__ == '__main__':
-  main()
