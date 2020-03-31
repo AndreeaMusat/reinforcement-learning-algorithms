@@ -11,3 +11,5 @@
 ## Visualizing algorithms
 
 ### Policy iteration
+
+### Value iteration
