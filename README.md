@@ -13,5 +13,3 @@
 ### Policy iteration
 
 ### Value iteration
-
-bla bla
